@@ -1,9 +1,12 @@
-package golangIPGuardian
+// TODO 需花時間重新檢查
+package golangIPSentry
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,6 +83,13 @@ func (i *IPGuardian) dynamicScore(device *Device) (*ScoreItem, error) {
 
 	errChan := make(chan error, 4)
 
+	if i.Config.Parameter.ScoreSuspicious <= 0 {
+		i.Config.Parameter.ScoreSuspicious = 50
+	}
+	if i.Config.Parameter.ScoreDangerous <= 0 {
+		i.Config.Parameter.ScoreDangerous = 80
+	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -103,28 +113,28 @@ func (i *IPGuardian) dynamicScore(device *Device) (*ScoreItem, error) {
 		mu.Unlock()
 	}()
 
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	var localFlags []string
-	// 	localScore := RiskScore{
-	// 		Base:   0,
-	// 		Detail: make(map[string]interface{}),
-	// 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var localFlags []string
+		localScore := RiskScore{
+			Base:   0,
+			Detail: make(map[string]interface{}),
+		}
 
-	// 	if err := i.calcGeo(device, &localFlags, &localScore); err != nil {
-	// 		errChan <- err
-	// 		return
-	// 	}
+		if err := i.calcGeo(device, &localFlags, &localScore); err != nil {
+			errChan <- err
+			return
+		}
 
-	// 	mu.Lock()
-	// 	combinedFlags = append(combinedFlags, localFlags...)
-	// 	combinedScore.Base += localScore.Base
-	// 	for k, v := range localScore.Detail {
-	// 		combinedScore.Detail[k] = v
-	// 	}
-	// 	mu.Unlock()
-	// }()
+		mu.Lock()
+		combinedFlags = append(combinedFlags, localFlags...)
+		combinedScore.Base += localScore.Base
+		for k, v := range localScore.Detail {
+			combinedScore.Detail[k] = v
+		}
+		mu.Unlock()
+	}()
 
 	wg.Add(1)
 	go func() {
@@ -210,78 +220,78 @@ type ScoreResult struct {
 	Error error
 }
 
-func (i *IPGuardian) dynamicScoreAdvanced(device *Device) (*ScoreItem, error) {
-	// 定義計算任務
-	tasks := []ScoreTask{
-		{"basic", i.calcBasic},
-		// {"geo", i.calcGeo},
-		{"behavior", i.calcBehavior},
-		{"fingerprint", i.calcFingerprint},
-	}
+// func (i *IPGuardian) dynamicScoreAdvanced(device *Device) (*ScoreItem, error) {
+// 	// 定義計算任務
+// 	tasks := []ScoreTask{
+// 		{"basic", i.calcBasic},
+// 		{"geo", i.calcGeo},
+// 		{"behavior", i.calcBehavior},
+// 		{"fingerprint", i.calcFingerprint},
+// 	}
 
-	// 結果通道
-	resultChan := make(chan ScoreResult, len(tasks))
+// 	// 結果通道
+// 	resultChan := make(chan ScoreResult, len(tasks))
 
-	// 並行執行所有任務
-	for _, task := range tasks {
-		go func(t ScoreTask) {
-			var flags []string
-			score := RiskScore{
-				Base:   0,
-				Detail: make(map[string]interface{}),
-			}
+// 	// 並行執行所有任務
+// 	for _, task := range tasks {
+// 		go func(t ScoreTask) {
+// 			var flags []string
+// 			score := RiskScore{
+// 				Base:   0,
+// 				Detail: make(map[string]interface{}),
+// 			}
 
-			err := t.Func(device, &flags, &score)
+// 			err := t.Func(device, &flags, &score)
 
-			resultChan <- ScoreResult{
-				Name:  t.Name,
-				Flags: flags,
-				Score: score,
-				Error: err,
-			}
-		}(task)
-	}
+// 			resultChan <- ScoreResult{
+// 				Name:  t.Name,
+// 				Flags: flags,
+// 				Score: score,
+// 				Error: err,
+// 			}
+// 		}(task)
+// 	}
 
-	// 收集所有結果
-	var combinedFlags []string
-	combinedScore := RiskScore{
-		Base:   0,
-		Detail: make(map[string]interface{}),
-	}
+// 	// 收集所有結果
+// 	var combinedFlags []string
+// 	combinedScore := RiskScore{
+// 		Base:   0,
+// 		Detail: make(map[string]interface{}),
+// 	}
 
-	for i := 0; i < len(tasks); i++ {
-		result := <-resultChan
+// 	for i := 0; i < len(tasks); i++ {
+// 		result := <-resultChan
 
-		if result.Error != nil {
-			return nil, fmt.Errorf("error in %s calculation: %w", result.Name, result.Error)
-		}
+// 		if result.Error != nil {
+// 			return nil, fmt.Errorf("error in %s calculation: %w", result.Name, result.Error)
+// 		}
 
-		// 合併結果
-		combinedFlags = append(combinedFlags, result.Flags...)
-		combinedScore.Base += result.Score.Base
-		for k, v := range result.Score.Detail {
-			combinedScore.Detail[k] = v
-		}
-	}
+// 		// 合併結果
+// 		combinedFlags = append(combinedFlags, result.Flags...)
+// 		combinedScore.Base += result.Score.Base
+// 		for k, v := range result.Score.Detail {
+// 			combinedScore.Detail[k] = v
+// 		}
+// 	}
 
-	close(resultChan)
+// 	close(resultChan)
 
-	// 計算最終風險評分
-	totalRisk := i.calcScore(combinedScore)
+// 	// 計算最終風險評分
+// 	totalRisk := i.calcScore(combinedScore)
 
-	if totalRisk > 100 {
-		i.Manager.Block.Add(device.IP.Address, "Score greater than 100")
-	}
+// 	if totalRisk > 100 {
+// 		i.Manager.Block.Add(device.IP.Address, "Score greater than 100")
+// 	}
 
-	return &ScoreItem{
-		IsBlock:      totalRisk >= 100,
-		IsSuspicious: totalRisk >= i.Config.Parameter.ScoreSuspicious,
-		IsDangerous:  totalRisk >= i.Config.Parameter.ScoreDangerous,
-		Flag:         combinedFlags,
-		Score:        totalRisk,
-		Detail:       combinedScore.Detail,
-	}, nil
-}
+// 	return &ScoreItem{
+// 		IsBlock:      totalRisk >= 100,
+// 		IsSuspicious: totalRisk >= i.Config.Parameter.ScoreSuspicious,
+// 		IsDangerous:  totalRisk >= i.Config.Parameter.ScoreDangerous,
+// 		Flag:         combinedFlags,
+// 		Score:        totalRisk,
+// 		Detail:       combinedScore.Detail,
+// 	}, nil
+// }
 
 type BasicItem struct {
 	key       string
@@ -294,6 +304,42 @@ type BasicItem struct {
 func (i *IPGuardian) calcBasic(device *Device, flags *[]string, riskScore *RiskScore) error {
 	if err := validateDevice(device); err != nil {
 		return err
+	}
+
+	if i.Config.Parameter.SessionMultiIP <= 0 {
+		i.Config.Parameter.SessionMultiIP = 4
+	}
+
+	if i.Config.Parameter.ScoreSessionMultiIP <= 0 {
+		i.Config.Parameter.ScoreSessionMultiIP = 25
+	}
+
+	if i.Config.Parameter.IPMultiDevice <= 0 {
+		i.Config.Parameter.IPMultiDevice = 8
+	}
+	if i.Config.Parameter.ScoreIPMultiDevice <= 0 {
+		i.Config.Parameter.ScoreIPMultiDevice = 20
+	}
+
+	if i.Config.Parameter.DeviceMultiIP <= 0 {
+		i.Config.Parameter.DeviceMultiIP = 4
+	}
+	if i.Config.Parameter.ScoreDeviceMultiIP <= 0 {
+		i.Config.Parameter.ScoreDeviceMultiIP = 15
+	}
+
+	if i.Config.Parameter.LoginFailure <= 0 {
+		i.Config.Parameter.LoginFailure = 4
+	}
+	if i.Config.Parameter.NotFound404 <= 0 {
+		i.Config.Parameter.NotFound404 = 8
+	}
+
+	if i.Config.Parameter.ScoreLoginFailure <= 0 {
+		i.Config.Parameter.ScoreLoginFailure = 15
+	}
+	if i.Config.Parameter.ScoreNotFound404 <= 0 {
+		i.Config.Parameter.ScoreNotFound404 = 15
 	}
 
 	operations := []BasicItem{
@@ -313,7 +359,7 @@ func (i *IPGuardian) calcBasic(device *Device, flags *[]string, riskScore *RiskS
 		},
 		{
 			key:       fmt.Sprintf(redisDeviceFp, device.Fingerprint),
-			value:     device.Fingerprint,
+			value:     device.IP.Address,
 			threshold: i.Config.Parameter.DeviceMultiIP,
 			flagName:  "device_multi_ip",
 			riskPoint: i.Config.Parameter.ScoreDeviceMultiIP,
@@ -329,7 +375,13 @@ func (i *IPGuardian) calcBasic(device *Device, flags *[]string, riskScore *RiskS
 		pipe.Expire(i.Context, op.key, time.Hour)
 	}
 
-	if _, err := pipe.Exec(i.Context); err != nil {
+	notFound404Key := fmt.Sprintf(redisNotFound404, device.SessionID)
+	loginFailureKey := fmt.Sprintf(redisLoginFailure, device.SessionID)
+
+	notFound404Cmd := pipe.Get(i.Context, notFound404Key)
+	loginFailureCmd := pipe.Get(i.Context, loginFailureKey)
+
+	if _, err := pipe.Exec(i.Context); err != nil && err.Error() != "redis: nil" {
 		return fmt.Errorf("failed to execute redis pipeline: %w", err)
 	}
 
@@ -339,7 +391,6 @@ func (i *IPGuardian) calcBasic(device *Device, flags *[]string, riskScore *RiskS
 			return fmt.Errorf("failed to get count for %s: %w", op.key, err)
 		}
 
-		// * 超過 1.5 倍閾值，標記為高風險
 		if int(count) > int(math.Floor(float64(op.threshold)*1.5)) {
 			*flags = append(*flags, op.flagName)
 			riskScore.Base += op.riskPoint * 2
@@ -351,128 +402,79 @@ func (i *IPGuardian) calcBasic(device *Device, flags *[]string, riskScore *RiskS
 		}
 	}
 
+	if notFound404Count, err := notFound404Cmd.Result(); err == nil {
+		if count, parseErr := strconv.Atoi(notFound404Count); parseErr == nil {
+			if count > int(math.Floor(float64(i.Config.Parameter.NotFound404)*1.5)) {
+				*flags = append(*flags, "excessive_404_errors")
+				riskScore.Base += i.Config.Parameter.ScoreNotFound404 * 2
+				riskScore.Detail["notFound404Count"] = count
+			} else if count > i.Config.Parameter.NotFound404 {
+				*flags = append(*flags, "frequent_404_errors")
+				riskScore.Base += i.Config.Parameter.ScoreNotFound404
+				riskScore.Detail["notFound404Count"] = count
+			}
+		}
+	}
+
+	if loginFailureCount, err := loginFailureCmd.Result(); err == nil {
+		if count, parseErr := strconv.Atoi(loginFailureCount); parseErr == nil {
+			if count > int(math.Floor(float64(i.Config.Parameter.LoginFailure)*1.5)) {
+				*flags = append(*flags, "excessive_login_failures")
+				riskScore.Base += i.Config.Parameter.ScoreLoginFailure * 2
+				riskScore.Detail["loginFailureCount"] = count
+			} else if count > i.Config.Parameter.LoginFailure {
+				*flags = append(*flags, "frequent_login_failures")
+				riskScore.Base += i.Config.Parameter.ScoreLoginFailure
+				riskScore.Detail["loginFailureCount"] = count
+			}
+		}
+	}
+
 	return nil
 }
 
-// TODO: Geo 檢查未完成
-// func (i *IPGuardian) calcGeo(device *Device, flags *[]string, riskScore *RiskScore) error {
-// 	if err := validateDevice(device); err != nil {
-// 		return err
-// 	}
+func (i *IPGuardian) calcGeo(device *Device, flags *[]string, score *RiskScore) error {
+	if err := validateDevice(device); err != nil {
+		return err
+	}
 
-// 	if i.GeoChecker == nil || i.GeoChecker.DB == nil {
-// 		return nil
-// 	}
+	if i.GeoLite2 == nil || i.GeoLite2.CityDB == nil {
+		return nil
+	}
 
-// 	ip := net.ParseIP(device.IP.Address)
-// 	if ip == nil {
-// 		return nil
-// 	}
+	record, err := i.GeoLite2.location(device.IP.Address)
+	if err != nil {
+		log.Printf("Failed to get geo record for IP %s: %v", device.IP.Address, err)
+		return nil
+	}
 
-// 	var location string
-// 	record, err := i.GeoChecker.DB.Country(ip)
-// 	if err != nil {
-// 		log.Printf("Failed to get geo record for IP %s: %v", device.IP.Address, err)
-// 		location = "unknown:unknown"
-// 		return nil
-// 	}
+	city := record.City
 
-// 	location = fmt.Sprintf("%s:%s", record.Country.IsoCode, record.Country.Names["en"])
-// 	geoKey := fmt.Sprintf(redisGeoLocation, device.SessionID)
-// 	locationWithTime := fmt.Sprintf("%d:%s", time.Now().UnixMilli(), location)
+	location := fmt.Sprintf("%s:%s:%.4f:%.4f", record.CountryCode, city, record.Latitude, record.Longitude)
+	geoKey := fmt.Sprintf(redisGeoLocation, device.SessionID)
+	locationWithTime := fmt.Sprintf("%d:%s", time.Now().UTC().UnixMilli(), location)
 
-// 	if err := i.Redis.LPush(i.Context, geoKey, locationWithTime).Err(); err != nil {
-// 		return err
-// 	}
+	log.Print(location, geoKey)
 
-// 	if err := i.Redis.LTrim(i.Context, geoKey, 0, 9).Err(); err != nil {
-// 		return err
-// 	}
+	// Redis操作批量處理
+	pipe := i.Redis.Pipeline()
+	pipe.LPush(i.Context, geoKey, locationWithTime)
+	pipe.LTrim(i.Context, geoKey, 0, 9)
+	pipe.Expire(i.Context, geoKey, 24*time.Hour)
+	_, err = pipe.Exec(i.Context)
+	if err != nil {
+		return err
+	}
 
-// 	if err := i.Redis.Expire(i.Context, geoKey, 24*time.Hour).Err(); err != nil {
-// 		return err
-// 	}
+	locations, err := i.Redis.LRange(i.Context, geoKey, 0, -1).Result()
+	if err != nil {
+		return err
+	}
 
-// 	locations, err := i.Redis.LRange(i.Context, geoKey, 0, -1).Result()
-// 	if err != nil {
-// 		return err
-// 	}
+	return i.GeoLite2.risk(locations, flags, score)
+}
 
-// 	oneHourAgo := time.Now().UnixMilli() - 3600000
-// 	var recentLocations []struct {
-// 		timestamp int64
-// 		country   string
-// 	}
-// 	recentCountries := make(map[string]bool)
-
-// 	for _, loc := range locations {
-// 		parts := strings.SplitN(loc, ":", 3)
-// 		if len(parts) >= 3 {
-// 			timestamp, _ := strconv.ParseInt(parts[0], 10, 64)
-// 			if timestamp >= oneHourAgo {
-// 				country := parts[1]
-// 				recentCountries[country] = true
-// 				recentLocations = append(recentLocations, struct {
-// 					timestamp int64
-// 					country   string
-// 				}{timestamp, country})
-// 			}
-// 		}
-// 	}
-
-// 	if len(recentCountries) > 4 {
-// 		*flags = append(*flags, "geo_hopping")
-// 		riskScore.Base += i.Config.Parameter.ScoreGeoHopping
-// 		riskScore.Detail["geoCountries"] = len(recentCountries)
-// 		riskScore.Detail["countries"] = getMapKeys(recentCountries)
-// 	}
-
-// 	if len(recentCountries) == 2 && len(recentLocations) >= 5 {
-// 		switchCount := 0
-// 		for i := 1; i < len(recentLocations); i++ {
-// 			if recentLocations[i].country != recentLocations[i-1].country {
-// 				switchCount++
-// 			}
-// 		}
-
-// 		if switchCount >= 4 {
-// 			*flags = append(*flags, "geo_frequent_switching")
-// 			riskScore.Base += i.Config.Parameter.ScoreGeoFrequentSwitch
-// 			riskScore.Detail["geoSwitches"] = switchCount
-// 			riskScore.Detail["switchCountries"] = getMapKeys(recentCountries)
-// 		}
-// 	}
-
-// 	if len(locations) >= 2 {
-// 		recent := locations[:2]
-// 		parts1 := strings.SplitN(recent[0], ":", 3)
-// 		parts2 := strings.SplitN(recent[1], ":", 3)
-
-// 		if len(parts1) >= 3 && len(parts2) >= 3 {
-// 			timestamp1, _ := strconv.ParseInt(parts1[0], 10, 64)
-// 			timestamp2, _ := strconv.ParseInt(parts2[0], 10, 64)
-// 			timeDiff := timestamp1 - timestamp2
-
-// 			country1 := parts1[1]
-// 			country2 := parts2[1]
-
-// 			// 1小時內跨國
-// 			if timeDiff < 3600000 && country1 != country2 {
-// 				*flags = append(*flags, "rapid_geo_change")
-// 				riskScore.Base += i.Config.Parameter.ScoreGeoRapidChange
-// 				riskScore.Detail["rapidGeoChange"] = map[string]interface{}{
-// 					"from":   fmt.Sprintf("%s:%s", parts2[1], parts2[2]),
-// 					"to":     fmt.Sprintf("%s:%s", parts1[1], parts1[2]),
-// 					"timeMs": timeDiff,
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	return nil
-// }
-
-func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *RiskScore) error {
+func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, score *RiskScore) error {
 	if err := validateDevice(device); err != nil {
 		return err
 	}
@@ -488,7 +490,7 @@ func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *Ri
 	lastRequestStr, err1 := lastRequestCmd.Result()
 	if err1 == nil && lastRequestStr != "" {
 		lastRequest, _ := strconv.ParseInt(lastRequestStr, 10, 64)
-		timeDiff := time.Now().UnixMilli() - lastRequest
+		timeDiff := time.Now().UTC().UnixMilli() - lastRequest
 		intervalHistoryKey := fmt.Sprintf(redisInterval, device.SessionID)
 
 		pipe2 := i.Redis.Pipeline()
@@ -504,6 +506,10 @@ func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *Ri
 		intervals, err := intervalsCmd.Result()
 		if err != nil {
 			return err
+		}
+
+		if i.Config.Parameter.ScoreIntervalRequest <= 0 {
+			i.Config.Parameter.ScoreIntervalRequest = 25
 		}
 
 		if len(intervals) >= 5 {
@@ -530,8 +536,8 @@ func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *Ri
 
 			if variance < 1000 && avgInterval > 500 && avgInterval < 30000 {
 				*flags = append(*flags, "interval_request")
-				riskScore.Base += i.Config.Parameter.ScoreIntervalRequest
-				riskScore.Detail["regularInterval"] = map[string]interface{}{
+				score.Base += i.Config.Parameter.ScoreIntervalRequest
+				score.Detail["regularInterval"] = map[string]interface{}{
 					"avg":      avgInterval,
 					"variance": variance,
 				}
@@ -539,8 +545,8 @@ func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *Ri
 
 			if tooFastCount >= 16 {
 				*flags = append(*flags, "too_frequent_requests")
-				riskScore.Base += i.Config.Parameter.ScoreFrequencyRequest
-				riskScore.Detail["tooFrequentRequests"] = map[string]interface{}{
+				score.Base += i.Config.Parameter.ScoreFrequencyRequest
+				score.Detail["tooFrequentRequests"] = map[string]interface{}{
 					"count":        tooFastCount,
 					"totalChecked": len(values),
 				}
@@ -548,37 +554,41 @@ func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *Ri
 
 			if variance < 100 && len(values) >= 8 {
 				*flags = append(*flags, "extremely_regular")
-				riskScore.Base += int(float64(i.Config.Parameter.ScoreIntervalRequest) * 1.5)
-				riskScore.Detail["extremelyRegular"] = variance
+				score.Base += int(float64(i.Config.Parameter.ScoreIntervalRequest) * 1.5)
+				score.Detail["extremelyRegular"] = variance
 			}
 		}
+	}
+
+	if i.Config.Parameter.ScoreLongConnection <= 0 {
+		i.Config.Parameter.ScoreLongConnection = 15
 	}
 
 	sessionStartStr, err2 := sessionStartCmd.Result()
 
 	pipe3 := i.Redis.Pipeline()
-	pipe3.SetEx(i.Context, intervalKey, time.Now().UnixMilli(), time.Hour)
+	pipe3.SetEx(i.Context, intervalKey, time.Now().UTC().UnixMilli(), time.Hour)
 
 	if err2 == redis.Nil {
-		pipe3.SetEx(i.Context, sessionStartKey, time.Now().UnixMilli(), 15*time.Minute)
+		pipe3.SetEx(i.Context, sessionStartKey, time.Now().UTC().UnixMilli(), 15*time.Minute)
 	} else if err2 == nil {
 		pipe3.Expire(i.Context, sessionStartKey, 15*time.Minute)
 
 		sessionStart, _ := strconv.ParseInt(sessionStartStr, 10, 64)
-		duration := time.Now().UnixMilli() - sessionStart
+		duration := time.Now().UTC().UnixMilli() - sessionStart
 
 		if duration > 4*3600*1000 {
 			*flags = append(*flags, "extremely_long_connection")
-			riskScore.Base += i.Config.Parameter.ScoreLongConnection * 2
-			riskScore.Detail["sessionDuration"] = duration
+			score.Base += i.Config.Parameter.ScoreLongConnection * 2
+			score.Detail["sessionDuration"] = duration
 		} else if duration > 2*3600*1000 {
 			*flags = append(*flags, "long_connection")
-			riskScore.Base += int(float64(i.Config.Parameter.ScoreLongConnection) * 1.5)
-			riskScore.Detail["sessionDuration"] = duration
+			score.Base += int(float64(i.Config.Parameter.ScoreLongConnection) * 1.5)
+			score.Detail["sessionDuration"] = duration
 		} else if duration > 1*3600*1000 {
 			*flags = append(*flags, "moderate_long_connection")
-			riskScore.Base += i.Config.Parameter.ScoreLongConnection
-			riskScore.Detail["sessionDuration"] = duration
+			score.Base += i.Config.Parameter.ScoreLongConnection
+			score.Detail["sessionDuration"] = duration
 		}
 	}
 
@@ -586,12 +596,16 @@ func (i *IPGuardian) calcBehavior(device *Device, flags *[]string, riskScore *Ri
 	return err
 }
 
-func (i *IPGuardian) calcFingerprint(device *Device, flags *[]string, riskScore *RiskScore) error {
+func (i *IPGuardian) calcFingerprint(device *Device, flags *[]string, score *RiskScore) error {
 	if err := validateDevice(device); err != nil {
 		return err
 	}
 
-	currentMinute := time.Now().UnixMilli() / 60000
+	if i.Config.Parameter.ScoreFpMultiSession <= 0 {
+		i.Config.Parameter.ScoreFpMultiSession = 50
+	}
+
+	currentMinute := time.Now().UTC().UnixMilli() / 60000
 	fingerprintSessionKey := fmt.Sprintf(redisFpSession, currentMinute, device.Fingerprint)
 
 	if err := i.Redis.SAdd(i.Context, fingerprintSessionKey, device.SessionID).Err(); err != nil {
@@ -609,17 +623,17 @@ func (i *IPGuardian) calcFingerprint(device *Device, flags *[]string, riskScore 
 
 	if int(sessionCount) > 2 {
 		*flags = append(*flags, "fp_multi_session")
-		riskScore.Base += i.Config.Parameter.ScoreFpMultiSession
-		riskScore.Detail["fingerprintSessions"] = sessionCount
+		score.Base += i.Config.Parameter.ScoreFpMultiSession
+		score.Detail["fingerprintSessions"] = sessionCount
 	}
 
 	return nil
 }
 
-func (i *IPGuardian) calcScore(riskScore RiskScore) int {
-	total := riskScore.Base
+func (i *IPGuardian) calcScore(score RiskScore) int {
+	total := score.Base
 
-	if len(riskScore.Detail) > 4 {
+	if len(score.Detail) > 4 {
 		total += 25
 	}
 
@@ -656,4 +670,50 @@ func getMapKeys(m map[string]bool) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// * public
+func (i *IPGuardian) NotFound404(w http.ResponseWriter, r *http.Request) error {
+	device, err := i.getDevice(w, r)
+	if err != nil {
+		return i.Logger.Error(err, "Failed to get device")
+	}
+
+	key := fmt.Sprintf(redisNotFound404, device.SessionID)
+
+	count, err := i.Redis.Incr(i.Context, key).Result()
+	if err != nil {
+		return i.Logger.Error(err, "Failed to increase 404 count")
+	}
+
+	if count == 1 {
+		if err := i.Redis.Expire(i.Context, key, time.Hour).Err(); err != nil {
+			return i.Logger.Error(err, "Failed to set expiration for 404 count")
+		}
+	}
+
+	return nil
+}
+
+// * public
+func (i *IPGuardian) LoginFailure(w http.ResponseWriter, r *http.Request) error {
+	device, err := i.getDevice(w, r)
+	if err != nil {
+		return i.Logger.Error(err, "Failed to get device")
+	}
+
+	key := fmt.Sprintf(redisLoginFailure, device.SessionID)
+
+	count, err := i.Redis.Incr(i.Context, key).Result()
+	if err != nil {
+		return i.Logger.Error(err, "Failed to increase login failure count")
+	}
+
+	if count == 1 {
+		if err := i.Redis.Expire(i.Context, key, time.Hour).Err(); err != nil {
+			return i.Logger.Error(err, "Failed to set expiration for login failure count")
+		}
+	}
+
+	return nil
 }

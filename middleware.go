@@ -1,4 +1,4 @@
-package golangIPGuardian
+package golangIPSentry
 
 import (
 	"encoding/json"

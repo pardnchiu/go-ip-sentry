@@ -1,4 +1,5 @@
-package golangIPGuardian
+// TODO 需花時間整理
+package golangIPSentry
 
 import (
 	"crypto/hmac"
@@ -20,16 +21,16 @@ type Device struct {
 	Platform    string
 	Browser     string
 	Type        string // * Desktop|Mobile|Tablet
-	Is          DeviceIS
+	Is          IS
 	OS          string
-	IP          DeviceIP
+	IP          IP
 	AcceptLang  string
 	Referer     string
 	SessionID   string
 	Fingerprint string
 }
 
-type DeviceIS struct {
+type IS struct {
 	Mobile   bool
 	Tablet   bool
 	Desktop  bool
@@ -39,7 +40,7 @@ type DeviceIS struct {
 	Trust    bool // * 是否在白名單中
 }
 
-type DeviceIP struct {
+type IP struct {
 	Address      string
 	IsPrivate    bool
 	Level        int
@@ -52,7 +53,7 @@ func (i *IPGuardian) getDevice(w http.ResponseWriter, r *http.Request) (*Device,
 	ipAddress, isPrivate, err := getClientIP(r)
 
 	if err != nil {
-		return nil, i.Logger.error("Failed to get client IP")
+		return nil, i.Logger.Error(nil, "Failed to get client IP")
 	}
 
 	ipTrustLevel := 0
@@ -66,17 +67,17 @@ func (i *IPGuardian) getDevice(w http.ResponseWriter, r *http.Request) (*Device,
 		Platform: getPlatform(userAgent),
 		Browser:  getBrowser(userAgent),
 		Type:     deviceType,
-		Is: DeviceIS{
+		Is: IS{
 			Mobile:   deviceType == "Mobile",
 			Tablet:   deviceType == "Tablet",
 			Desktop:  deviceType == "Desktop",
 			Internal: isPrivate,
-			Trust:    i.Manager.Trust.check(ipAddress),
-			Ban:      i.Manager.Ban.check(ipAddress),
-			Block:    i.Manager.Block.check(ipAddress),
+			Trust:    i.Manager.Allow.Check(ipAddress),
+			Ban:      i.Manager.Deny.Check(ipAddress),
+			Block:    i.Manager.Block.IsBlock(ipAddress),
 		},
 		OS: getOS(userAgent),
-		IP: DeviceIP{
+		IP: IP{
 			Address: ipAddress,
 			Level:   ipTrustLevel,
 		},
@@ -565,7 +566,7 @@ func getOS(userAgent string) string {
 }
 
 func (i *IPGuardian) requestCountInMin(ip string) (int, error) {
-	key := fmt.Sprintf(redisFrequency, ip, int64(math.Floor(float64(time.Now().Unix())/60)))
+	key := fmt.Sprintf(redisFrequency, ip, int64(math.Floor(float64(time.Now().UTC().Unix())/60)))
 
 	count, err := i.Redis.Incr(i.Context, key).Result() // * 自動計數
 	if err != nil {
@@ -580,7 +581,7 @@ func (i *IPGuardian) requestCountInMin(ip string) (int, error) {
 }
 
 func (i *IPGuardian) blockCountInHour(ip string) (int, error) {
-	if !i.Manager.Block.check(ip) {
+	if !i.Manager.Block.IsBlock(ip) {
 		return 0, nil
 	}
 
