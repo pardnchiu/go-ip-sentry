@@ -1,13 +1,16 @@
 > [!Note]
 > This content is translated by LLM. Original text can be found [here](README.zh.md)
 
-# IP Sentry (Golang)
+# IP Sentry
 
 > A Go-based IP security protection package providing real-time threat detection, dynamic risk scoring, device fingerprinting, and multi-layered security mechanisms.
 
+![lang](https://img.shields.io/badge/lang-go-blue)
 [![license](https://img.shields.io/github/license/pardnchiu/go-ip-sentry)](LICENSE)
 [![version](https://img.shields.io/github/v/tag/pardnchiu/go-ip-sentry)](https://github.com/pardnchiu/go-ip-sentry/releases)
-[![readme](https://img.shields.io/badge/readme-中文-blue)](README.zh.md) 
+![card](https://goreportcard.com/badge/github.com/pardnchiu/go-ip-sentry)<br>
+[![readme](https://img.shields.io/badge/readme-EN-white)](README.md)
+[![readme](https://img.shields.io/badge/readme-ZH-white)](README.zh.md) 
 
 ## Three Core Features
 

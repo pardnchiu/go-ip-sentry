@@ -1,10 +1,13 @@
-# IP Sentry (Golang)
+# IP Sentry
 
 > 一個 Go 語言 IP 安全防護套件，提供即時威脅檢測、動態風險評分、設備指紋識別和多層安全機制。
 
+![lang](https://img.shields.io/badge/lang-go-blue)
 [![license](https://img.shields.io/github/license/pardnchiu/go-ip-sentry)](LICENSE)
 [![version](https://img.shields.io/github/v/tag/pardnchiu/go-ip-sentry)](https://github.com/pardnchiu/go-ip-sentry/releases)
-[![readme](https://img.shields.io/badge/readme-中文-blue)](README.zh.md) 
+![card](https://goreportcard.com/badge/github.com/pardnchiu/go-ip-sentry)<br>
+[![readme](https://img.shields.io/badge/readme-EN-white)](README.md)
+[![readme](https://img.shields.io/badge/readme-ZH-white)](README.zh.md) 
 
 ## 三大主軸
 
