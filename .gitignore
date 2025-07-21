@@ -4,3 +4,5 @@
 memo.md
 GeoLite2*
 test/*.json
+.doc/
+wiki-worker/
