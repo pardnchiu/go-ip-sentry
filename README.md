@@ -709,6 +709,10 @@ router.Use(guardian.GinMiddleware())
 
 This source code project is licensed under the [MIT](LICENSE) license.
 
+## Star
+
+[![Star](https://api.star-history.com/svg?repos=pardnchiu/go-ip-sentry&type=Date)](https://www.star-history.com/#pardnchiu/go-ip-sentry&Date)
+
 ## Author
 
 <img src="https://avatars.githubusercontent.com/u/25631760" align="left" width="96" height="96" style="margin-right: 0.5rem;">
